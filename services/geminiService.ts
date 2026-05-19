@@ -10,7 +10,9 @@ const LANGUAGE_NAMES: Record<AppLanguage, string> = {
   zh: "Simplified Chinese",
   ja: "Japanese",
   es: "Spanish",
-  fr: "French"
+  fr: "French",
+  ru: "Russian",
+  ar: "Arabic"
 };
 
 const parseDecipherResponse = (response: any): DecipherResult => {

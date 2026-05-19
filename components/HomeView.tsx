@@ -1,14 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
-import { AppTheme, AppLanguage, TRANSLATIONS } from '../types';
+import { useTranslation } from 'react-i18next';
+import { AppTheme, AppLanguage } from '../types';
 import { IconHistory, IconSettings, IconCamera } from './Icons';
+import { useSettingsStore } from '../store/useSettingsStore';
 
 interface HomeViewProps {
   onScanStart: () => void;
   onOpenHistory: () => void;
   onOpenSettings: () => void;
-  theme: AppTheme;
-  language: AppLanguage;
 }
 
 // Unsplash Configuration
@@ -18,6 +18,16 @@ const APP_NAME = 'Context Lens';
 // Safe Fallback Assets
 const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1508804185872-d7badad00f7d?auto=format&fit=crop&w=800&q=80"; // Red wall texture
 const FALLBACK_CREDIT = { name: "Zhang Kaiyv", link: "https://unsplash.com/@zhangkaiyv" };
+
+const FALLBACK_CITY_I18N: Record<AppLanguage, string> = {
+  en: "Beijing",
+  zh: "北京",
+  ja: "北京",
+  es: "Pekín",
+  fr: "Pékin",
+  ru: "Пекин",
+  ar: "بكين"
+};
 
 // Dynamic Templates for Unknown Cities
 const DYNAMIC_TEMPLATES: Record<AppLanguage, { quote: string; author: string; title: string }[]> = {
@@ -45,6 +55,16 @@ const DYNAMIC_TEMPLATES: Record<AppLanguage, { quote: string; author: string; ti
     { quote: "L'âme de {city} se trouve mieux dans le silence entre ses bruits.", author: "Échos Urbains", title: "Esprit de {city}" },
     { quote: "Chaque coin de {city} cache une histoire que les livres ont oubliée.", author: "Sagesse Locale", title: "{city} Cachée" },
     { quote: "Pour connaître {city}, il faut se perdre dans ses ruelles, pas sur ses cartes.", author: "Le Promeneur", title: "Découvrir {city}" }
+  ],
+  ru: [
+    { quote: "Пульс города {city} лучше всего слышен в тишине между его звуками.", author: "Городские эхо", title: "Дух города {city}" },
+    { quote: "Каждый уголок в {city} скрывает историю, о которой забыли упомянуть учебники.", author: "Местная мудрость", title: "Скрытый {city}" },
+    { quote: "Узнать {city} — значит затеряться в его переулках, а не на картах.", author: "Странник", title: "{city} без прикрас" }
+  ],
+  ar: [
+    { quote: "يُسمع نبض {city} بوضوح في الصمت بين أصواتها.", author: "أصداء حضرية", title: "روح {city}" },
+    { quote: "تخفي كل زاوية في {city} قصة نسيت كتب التاريخ ذكرها.", author: "حكمة محلية", title: "{city} المخفية" },
+    { quote: "لكي تعرف {city} حقًا، عليك أن تتوه في أزقتها لا في خرائطها.", author: "المتجول", title: "اكتشاف {city}" }
   ]
 };
 
@@ -115,13 +135,11 @@ const DEFAULT_INSIGHTS = [
 export const HomeView: React.FC<HomeViewProps> = ({ 
   onScanStart, 
   onOpenHistory, 
-  onOpenSettings, 
-  theme,
-  language
+  onOpenSettings
 }) => {
+  const { t } = useTranslation();
+  const { theme, language } = useSettingsStore();
   const isDark = theme === 'dark';
-  const t = TRANSLATIONS[language].home;
-  const tGreeting = TRANSLATIONS[language].greeting;
   
   const [greeting, setGreeting] = useState('');
   
@@ -145,9 +163,26 @@ export const HomeView: React.FC<HomeViewProps> = ({
   };
 
   const fetchUnsplashPhoto = async (query: string): Promise<boolean> => {
+      // 1. 定义缓存的 Key 和有效期 (这里设为 2 小时)
+      const CACHE_KEY = `lorelens_img_${query}`;
+      const CACHE_EXPIRY = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+
       try {
+          // 2. 检查本地缓存
+          const cachedData = localStorage.getItem(CACHE_KEY);
+          if (cachedData) {
+              const { url, credit, timestamp } = JSON.parse(cachedData);
+              if (Date.now() - timestamp < CACHE_EXPIRY) {
+                  setCurrentImage(url);
+                  setPhotoCredit(credit);
+                  return true;
+              }
+          }
+
+          // 3. 【核心修复】换回你最开始用的强大的 /search/photos 接口！
+          // 请求前 15 张高度匹配的图片 (per_page=15)
           const response = await fetch(
-              `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&orientation=portrait&per_page=1`,
+              `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&orientation=portrait&per_page=15`,
               { headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` } }
           );
           
@@ -159,15 +194,30 @@ export const HomeView: React.FC<HomeViewProps> = ({
           if (!response.ok) return false;
 
           const data = await response.json();
-          if (data.results && data.results.length > 0) {
-              const photo = data.results[0];
-              setCurrentImage(photo.urls.regular);
-              setPhotoCredit({
+          
+          // 4. 【实现随机性】只要搜到了图片，我们就在结果数组里随机抽选一张
+          if (data && data.results && data.results.length > 0) {
+              const randomIndex = Math.floor(Math.random() * data.results.length);
+              const photo = data.results[randomIndex];
+
+              const url = photo.urls.regular;
+              const credit = {
                   name: photo.user.name,
                   link: photo.user.links.html
-              });
+              };
+
+              setCurrentImage(url);
+              setPhotoCredit(credit);
               
-              if (photo.links.download_location) {
+              // 5. 将这轮抽中的图片和信息存入缓存，锁死 2 小时
+              localStorage.setItem(CACHE_KEY, JSON.stringify({
+                  url,
+                  credit,
+                  timestamp: Date.now()
+              }));
+
+              // 触发下载统计 (完全符合你发的 API Guidelines 规范)
+              if (photo.links?.download_location) {
                   fetch(photo.links.download_location, {
                       headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` }
                   }).catch(() => {});
@@ -181,19 +231,40 @@ export const HomeView: React.FC<HomeViewProps> = ({
   };
 
   // Logic to load content
-  const loadContextContent = async (city: string, district: string = "") => {
-      const cleanCity = city.replace(/(City|Shi)$/i, '').trim();
+  const loadContextContent = async (displayCity: string, displayDistrict: string = "", searchCity: string = "", searchDistrict: string = "") => {
+      const finalSearchCity = searchCity || displayCity;
+      const finalSearchDistrict = searchDistrict || displayDistrict;
+
+      const cleanDisplayCity = displayCity.replace(/(City|Shi)$/i, '').trim();
+      const cleanSearchCity = finalSearchCity.replace(/(City|Shi)$/i, '').trim();
       const timeCtx = getTimeContext();
       
+      let displayLocationName = cleanDisplayCity;
+      if (cleanDisplayCity === 'Beijing') {
+          displayLocationName = FALLBACK_CITY_I18N[language];
+      }
+
       // 1. Check Curated DB
-      const cityData = INSIGHTS_DB.find(c => cleanCity.includes(c.city) || c.city.includes(cleanCity));
+      const cityData = INSIGHTS_DB.find(c => cleanSearchCity.includes(c.city) || c.city.includes(cleanSearchCity));
       
       let searchQuery = "";
       
       if (cityData) {
           // Use DB Content
           const selected = cityData.items[Math.floor(Math.random() * cityData.items.length)];
-          setInsight(selected);
+          
+          if (language !== 'en') {
+              const langTemplates = DYNAMIC_TEMPLATES[language] || DYNAMIC_TEMPLATES['en'];
+              const template = langTemplates[Math.floor(Math.random() * langTemplates.length)];
+              setInsight({
+                  quote: template.quote.replace(/{city}/g, displayLocationName),
+                  author: template.author,
+                  title: template.title.replace(/{city}/g, displayLocationName),
+                  keywords: selected.keywords
+              });
+          } else {
+              setInsight(selected);
+          }
           // Append time context to DB keywords for variety
           searchQuery = `${selected.keywords} ${timeCtx.timeQuery}`;
       } else {
@@ -202,14 +273,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
           const template = langTemplates[Math.floor(Math.random() * langTemplates.length)];
           
           setInsight({
-              quote: template.quote.replace(/{city}/g, cleanCity),
+              quote: template.quote.replace(/{city}/g, displayLocationName),
               author: template.author,
-              title: template.title.replace(/{city}/g, cleanCity),
+              title: template.title.replace(/{city}/g, displayLocationName),
               keywords: "" 
           });
 
           // Dynamic Search: "Singapore downtown night neon street aesthetic"
-          searchQuery = `${cleanCity} ${district} ${timeCtx.timeQuery} aesthetic street architecture`;
+          searchQuery = `${cleanSearchCity} ${finalSearchDistrict} ${timeCtx.timeQuery} aesthetic street architecture`;
       }
 
       // 2. Fetch Image (Only if image hasn't been loaded for this specific context, or strictly rely on new fetch)
@@ -217,7 +288,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
       const success = await fetchUnsplashPhoto(searchQuery);
       if (!success) {
           // Fallback search with less specific terms
-          const broadQuery = `${cleanCity} ${timeCtx.timeQuery} architecture`;
+          const broadQuery = `${cleanSearchCity} ${timeCtx.timeQuery} architecture`;
           const retrySuccess = await fetchUnsplashPhoto(broadQuery);
           if (!retrySuccess) {
               setCurrentImage(FALLBACK_IMAGE);
@@ -232,41 +303,59 @@ export const HomeView: React.FC<HomeViewProps> = ({
         navigator.geolocation.getCurrentPosition(async (position) => {
             const { latitude, longitude } = position.coords;
             try {
-                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=12&addressdetails=1&accept-language=en`);
-                const data = await response.json();
+                // 1. 核心修复：同时请求两种语言的地理位置
+                // localizedData 用于右上角完美显示，englishData 用于 Unsplash 精确搜索！
+                const [localizedData, englishData] = await Promise.all([
+                    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=12&addressdetails=1&accept-language=${language}`).then(res => res.json()),
+                    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=12&addressdetails=1&accept-language=en`).then(res => res.json())
+                ]);
                 
-                const address = data.address || {};
-                const city = address.city || address.town || address.village || "Beijing";
-                const rawDistrict = address.suburb || address.district || "";
-                const district = rawDistrict.replace(/(District|New Area|County|Qu)$/i, '').trim();
+                // 解析用于【显示】的本地化名称
+                const locAddress = localizedData.address || {};
+                const displayCity = locAddress.city || locAddress.town || locAddress.village || "Beijing";
+                const displayDistrict = language === 'en' 
+                    ? (locAddress.suburb || locAddress.district || "").replace(/(District|New Area|County|Qu)$/i, '').trim() 
+                    : (locAddress.suburb || locAddress.district || "");
 
-                setCurrentCity(city);
-                setCurrentDistrict(district);
-                setLocationName(district ? `${city}, ${district}` : city);
+                // 解析用于【搜索】的纯英文名称
+                const enAddress = englishData.address || {};
+                const searchCity = enAddress.city || enAddress.town || enAddress.village || "Beijing";
+                const searchDistrict = (enAddress.suburb || enAddress.district || "").replace(/(District|New Area|County|Qu)$/i, '').trim();
+
+                setCurrentCity(displayCity);
+                setCurrentDistrict(displayDistrict);
+
+                // 根据语言习惯拼接显示的地理位置
+                let formattedLocation = displayCity;
+                if (displayDistrict) {
+                    if (language === 'ar') formattedLocation = `${displayDistrict}، ${displayCity}`;
+                    else if (language === 'zh' || language === 'ja') formattedLocation = `${displayCity}${displayDistrict}`;
+                    else formattedLocation = `${displayCity}, ${displayDistrict}`;
+                }
+                setLocationName(formattedLocation);
                 
-                loadContextContent(city, district);
+                // 2. 关键修复：把用于搜索的纯英文名 (searchCity) 传给加载函数！
+                loadContextContent(displayCity, displayDistrict, searchCity, searchDistrict);
             } catch (e) {
                 console.warn("Geocoding failed", e);
-                // Default to Beijing if geo fails
                 setCurrentCity("Beijing");
-                loadContextContent("Beijing");
+                loadContextContent("Beijing", "", "Beijing", "");
             }
         }, (err) => {
              console.warn("Location permission denied", err);
-             // Default to Beijing
              setCurrentCity("Beijing");
-             loadContextContent("Beijing");
+             loadContextContent("Beijing", "", "Beijing", "");
         }, { enableHighAccuracy: true });
     } else {
         setCurrentCity("Beijing");
-        loadContextContent("Beijing");
+        loadContextContent("Beijing", "", "Beijing", "");
     }
-  }, []);
+  }, [language]); 
 
   // Refresh greeting and insight text when Language changes
   useEffect(() => {
     const hour = new Date().getHours();
-    setGreeting(hour < 12 ? tGreeting.morning : hour < 18 ? tGreeting.afternoon : tGreeting.evening);
+    setGreeting(hour < 12 ? t('greeting.morning') : hour < 18 ? t('greeting.afternoon') : t('greeting.evening'));
     
     // Re-run insight generation (only for the text part if possible, but here we just re-run the whole lightweight logic)
     // We only re-run content loader if we have a city set, to avoid overwriting with defaults prematurely
@@ -278,15 +367,36 @@ export const HomeView: React.FC<HomeViewProps> = ({
          const cleanCity = currentCity.replace(/(City|Shi)$/i, '').trim();
          const cityData = INSIGHTS_DB.find(c => cleanCity.includes(c.city) || c.city.includes(cleanCity));
          
-         if (!cityData) {
+         let displayLocationName = cleanCity;
+         if (cleanCity === 'Beijing' || cleanCity === 'بكين' || cleanCity === 'Пекин' || cleanCity === 'Pekín' || cleanCity === 'Pékin' || cleanCity === '北京') {
+             displayLocationName = FALLBACK_CITY_I18N[language];
+         } else {
+             // If Nominatim gave us English while we requested another language, format it gracefully anyway
+         }
+         
+         if (!cityData || language !== 'en') {
              // It is dynamic, so we MUST update the text to match new language
              const langTemplates = DYNAMIC_TEMPLATES[language] || DYNAMIC_TEMPLATES['en'];
              const template = langTemplates[Math.floor(Math.random() * langTemplates.length)];
              setInsight({
-                  quote: template.quote.replace(/{city}/g, cleanCity),
+                  quote: template.quote.replace(/{city}/g, displayLocationName),
                   author: template.author,
-                  title: template.title.replace(/{city}/g, cleanCity),
-                  keywords: "" 
+                  title: template.title.replace(/{city}/g, displayLocationName),
+                  keywords: insight.keywords || "" 
+             });
+         } else {
+             // English and cityData exists
+             const selected = cityData.items[Math.floor(Math.random() * cityData.items.length)];
+             setInsight(selected);
+         }
+         
+         // Fix locationName title above
+         if (currentCity.includes('Beijing') || currentCity === 'بكين' || currentCity === 'Пекин' || currentCity === 'Pekín' || currentCity === 'Pékin' || currentCity === '北京') {
+             // We want to translate "Beijing" within the location name if it exists, without losing the district.
+             // Usually locationName might be "Chaoyang District, Beijing" or "Beijing, Chaoyang District"
+             // But if we only have the city, we can just use the fallback.
+             setLocationName(prev => {
+                 return prev.replace(/(Beijing|بكين|Пекин|Pekín|Pékin|北京)/g, FALLBACK_CITY_I18N[language] || FALLBACK_CITY_I18N['en']);
              });
          }
     }
@@ -341,15 +451,15 @@ export const HomeView: React.FC<HomeViewProps> = ({
                             className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-all duration-700 group-hover:scale-105"
                         />
                     )}
-                    <div className="absolute top-4 left-4 bg-black/30 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
-                        <span className="text-xs font-bold text-white tracking-wider uppercase">{t.localInsight}</span>
+                    <div className="absolute top-4 start-4 bg-black/30 backdrop-blur-md px-3 py-1 rounded-full border border-white/20">
+                        <span className="text-xs font-bold text-white tracking-wider uppercase">{t('home.localInsight')}</span>
                     </div>
                     
                     {/* Unsplash Attribution */}
                     {photoCredit && (
                         <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black/80 to-transparent flex justify-end z-10">
                             <span className="text-[10px] text-white/70 font-light tracking-wide">
-                                {t.photoBy} <a href={`${photoCredit.link}?utm_source=${APP_NAME}&utm_medium=referral`} target="_blank" rel="noopener noreferrer" className="underline hover:text-white transition-colors">{photoCredit.name}</a> {t.on} <a href={`https://unsplash.com/?utm_source=${APP_NAME}&utm_medium=referral`} target="_blank" rel="noopener noreferrer" className="underline hover:text-white transition-colors">Unsplash</a>
+                                {t('home.photoBy')} <a href={`${photoCredit.link}?utm_source=${APP_NAME}&utm_medium=referral`} target="_blank" rel="noopener noreferrer" className="underline hover:text-white transition-colors">{photoCredit.name}</a> {t('home.on')} <a href={`https://unsplash.com/?utm_source=${APP_NAME}&utm_medium=referral`} target="_blank" rel="noopener noreferrer" className="underline hover:text-white transition-colors">Unsplash</a>
                             </span>
                         </div>
                     )}
@@ -387,7 +497,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                     <IconCamera className="w-8 h-8 text-white" />
                 </button>
                 <span className="absolute -bottom-8 text-xs font-medium tracking-widest uppercase text-white/80 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
-                    {t.scan}
+                    {t('home.scan')}
                 </span>
             </div>
 

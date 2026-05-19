@@ -1,15 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AppTheme, AppLanguage } from '../types';
+import { useSettingsStore } from '../store/useSettingsStore';
 
 interface CropViewProps {
   imageSrc: string;
   onConfirm: (croppedImage: string) => void;
   onCancel: () => void;
-  theme: AppTheme;
-  language: AppLanguage;
 }
 
-export const CropView: React.FC<CropViewProps> = ({ imageSrc, onConfirm, onCancel, theme, language }) => {
+export const CropView: React.FC<CropViewProps> = ({ imageSrc, onConfirm, onCancel }) => {
+  const { t } = useTranslation();
+  const { theme, language } = useSettingsStore();
   const [crop, setCrop] = useState({ x: 10, y: 30, width: 80, height: 40 }); // Percentages
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -17,16 +19,6 @@ export const CropView: React.FC<CropViewProps> = ({ imageSrc, onConfirm, onCance
   const lastPos = useRef<{ x: number; y: number } | null>(null);
 
   const isDark = theme === 'dark';
-
-  // Labels
-  const labels = {
-    en: { title: "Focus Selection", hint: "Drag corners to frame the object", analyze: "Analyze Selection", retake: "Retake" },
-    zh: { title: "框选目标", hint: "拖动边框以聚焦物体", analyze: "开始解读", retake: "重拍" },
-    ja: { title: "選択範囲", hint: "枠をドラッグして対象を囲む", analyze: "分析する", retake: "撮り直す" },
-    es: { title: "Selección", hint: "Arrastra para encuadrar", analyze: "Analizar", retake: "Retomar" },
-    fr: { title: "Sélection", hint: "Encadrez l'objet", analyze: "Analyser", retake: "Reprendre" }
-  };
-  const t = labels[language];
 
   // Touch/Mouse Handlers
   const handleStart = (e: React.TouchEvent | React.MouseEvent, type: string) => {
@@ -135,9 +127,9 @@ export const CropView: React.FC<CropViewProps> = ({ imageSrc, onConfirm, onCance
       {/* Header */}
       <div className="absolute top-0 inset-x-0 p-6 z-20 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent">
         <button onClick={onCancel} className="text-white/80 font-medium px-4 py-2 rounded-full bg-white/10 backdrop-blur-md">
-           {t.retake}
+           {t('crop.retake')}
         </button>
-        <span className="text-white font-light tracking-widest uppercase text-sm shadow-black drop-shadow-md">{t.title}</span>
+        <span className="text-white font-light tracking-widest uppercase text-sm shadow-black drop-shadow-md">{t('crop.title')}</span>
         <div className="w-16"></div> {/* Spacer */}
       </div>
 
@@ -228,13 +220,13 @@ export const CropView: React.FC<CropViewProps> = ({ imageSrc, onConfirm, onCance
 
       {/* Footer Controls */}
       <div className="absolute bottom-0 inset-x-0 pb-10 pt-16 px-6 bg-gradient-to-t from-black via-black/80 to-transparent flex flex-col items-center justify-center gap-4 z-20 pointer-events-none">
-         <p className="text-white/60 text-xs tracking-wider animate-pulse mb-2">{t.hint}</p>
+         <p className="text-white/60 text-xs tracking-wider animate-pulse mb-2">{t('crop.hint')}</p>
          <button 
             onClick={performCrop}
             className="pointer-events-auto bg-white text-black px-8 py-4 rounded-full font-bold text-lg tracking-wide shadow-[0_0_20px_rgba(255,255,255,0.3)] active:scale-95 transition-transform flex items-center gap-2"
          >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
-            {t.analyze}
+            {t('crop.analyze')}
          </button>
       </div>
     </div>

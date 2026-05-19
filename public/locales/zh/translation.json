@@ -1,0 +1,57 @@
+{
+  "greeting": {
+    "morning": "早上好",
+    "afternoon": "下午好",
+    "evening": "晚上好"
+  },
+  "home": {
+    "localInsight": "本地洞察",
+    "scan": "扫描解读",
+    "photoBy": "摄影师",
+    "on": "来自"
+  },
+  "settings": {
+    "title": "设置",
+    "language": "语言",
+    "appearance": "外观",
+    "preferences": "偏好",
+    "data": "数据",
+    "midnight": "深邃黑",
+    "porcelain": "陶瓷白",
+    "saveGallery": "保存照片到相册",
+    "highResAudio": "高清语音朗读",
+    "highResDesc": "在结果页启用“朗读”按钮",
+    "clearHistory": "清除历史记录",
+    "confirmClear": "再次点击确认",
+    "itemsInStorage": "个项目已存储"
+  },
+  "result": {
+    "essence": "本质",
+    "mirror": "镜像洞察",
+    "philosophy": "文化逻辑",
+    "action": "试一试",
+    "share": "已复制到剪贴板",
+    "shareError": "分享失败"
+  },
+  "history": {
+    "title": "我的发现",
+    "empty": "暂无发现",
+    "emptySub": "去探索一下吧！",
+    "recapButton": "共鸣回顾",
+    "dailyJournal": "时空轴线",
+    "writing": "正在计算文化共鸣...",
+    "noItemsToday": "今天还没有新的发现哦。",
+    "curiosityScore": "共鸣指数",
+    "mood": "今日心情"
+  },
+  "map": {
+    "title": "发现地图",
+    "openMaps": "在 Google Maps 打开"
+  },
+  "crop": {
+    "title": "框选目标",
+    "hint": "拖动边框以聚焦物体",
+    "analyze": "开始解读",
+    "retake": "重拍"
+  }
+}

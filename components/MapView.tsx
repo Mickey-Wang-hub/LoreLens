@@ -1,21 +1,26 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { HistoryItem, AppTheme, AppLanguage, TRANSLATIONS } from '../types';
+import 'leaflet.markercluster';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
+import { useTranslation } from 'react-i18next';
+import { HistoryItem } from '../types';
 import { IconChevronDown } from './Icons';
+import { useSettingsStore } from '../store/useSettingsStore';
+import { useHistoryStore } from '../store/useHistoryStore';
 
 interface MapViewProps {
-  history: HistoryItem[];
   onClose: () => void;
-  theme: AppTheme;
-  language: AppLanguage;
 }
 
-export const MapView: React.FC<MapViewProps> = ({ history, onClose, theme, language }) => {
+export const MapView: React.FC<MapViewProps> = ({ onClose }) => {
+  const { t } = useTranslation();
+  const { theme } = useSettingsStore();
+  const { history } = useHistoryStore();
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const isDark = theme === 'dark';
-  const t = TRANSLATIONS[language].map;
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -68,28 +73,36 @@ export const MapView: React.FC<MapViewProps> = ({ history, onClose, theme, langu
         });
     };
 
+    const markers = L.markerClusterGroup({
+        chunkedLoading: true,
+        showCoverageOnHover: false,
+        spiderfyOnMaxZoom: true
+    });
+
     // Add Markers
     locations.forEach(item => {
         if (item.location) {
             const marker = L.marker([item.location.lat, item.location.lng], {
                 icon: createIcon(item.thumbnail)
-            }).addTo(map);
+            });
 
             const popupContent = `
-                <div class="text-sm font-sans">
-                    <h3 class="font-bold text-base mb-1">${item.title}</h3>
-                    <p class="text-gray-300 line-clamp-2">${item.essence}</p>
-                    ${item.mapUri ? `<a href="${item.mapUri}" target="_blank" class="block mt-2 text-blue-400 underline">${t.openMaps}</a>` : ''}
+                <div class="text-sm font-sans w-48">
+                    <h3 class="font-bold text-base mb-1 truncate">${item.title}</h3>
+                    <p class="text-gray-500 line-clamp-2 text-xs leading-relaxed mb-2">${item.essence}</p>
+                    ${item.mapUri ? `<a href="${item.mapUri}" target="_blank" class="text-blue-500 hover:text-blue-600 font-medium no-underline inline-block">${t('map.openMaps')}</a>` : ''}
                 </div>
             `;
             marker.bindPopup(popupContent);
+            markers.addLayer(marker);
         }
     });
     
+    map.addLayer(markers);
+
     // Fit bounds if multiple locations
     if (locations.length > 1) {
-        const group = L.featureGroup(locations.map(item => L.marker([item.location!.lat, item.location!.lng])));
-        map.fitBounds(group.getBounds(), { padding: [50, 50] });
+        map.fitBounds(markers.getBounds(), { padding: [50, 50], maxZoom: 15 });
     }
 
     mapInstanceRef.current = map;
@@ -106,7 +119,7 @@ export const MapView: React.FC<MapViewProps> = ({ history, onClose, theme, langu
     <div className="absolute inset-0 z-30 bg-black animate-fade-in flex flex-col">
         {/* Header - Z-index increased to 2000 to sit above Leaflet controls */}
         <div className={`pt-12 px-6 pb-4 flex items-center justify-between z-[2000] ${isDark ? 'bg-black/60' : 'bg-white/80'} backdrop-blur-md absolute top-0 inset-x-0`}>
-            <h1 className={`text-2xl font-light tracking-wide ${isDark ? 'text-white' : 'text-gray-900'}`}>{t.title}</h1>
+            <h1 className={`text-2xl font-light tracking-wide ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('map.title')}</h1>
             <button 
                 onClick={onClose} 
                 className={`p-2 rounded-full ${isDark ? 'bg-white/10 hover:bg-white/20 text-white' : 'bg-black/5 hover:bg-black/10 text-gray-900'}`}

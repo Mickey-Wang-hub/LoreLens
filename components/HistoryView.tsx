@@ -1,15 +1,15 @@
 
 import React, { useState, useEffect } from 'react';
-import { AppTheme, HistoryItem, AppLanguage, TRANSLATIONS, DailyRecapResult } from '../types';
+import { useTranslation } from 'react-i18next';
+import { HistoryItem, DailyRecapResult } from '../types';
 import { IconChevronDown, IconJournal } from './Icons';
 import { generateDailyRecap } from '../services/geminiService';
+import { useSettingsStore } from '../store/useSettingsStore';
+import { useHistoryStore } from '../store/useHistoryStore';
 
 interface HistoryViewProps {
-  history: HistoryItem[];
   onSelect: (item: HistoryItem) => void;
   onClose: () => void;
-  theme: AppTheme;
-  language: AppLanguage;
   onShowNotification?: (msg: string) => void;
 }
 
@@ -89,24 +89,24 @@ const ResonanceFractal = ({ score, isDark }: { score: number, isDark: boolean })
 // 2. Axis Map: A vertical timeline connected by glowing lines
 const AxisMap = ({ items, onSelect, isDark }: { items: HistoryItem[], onSelect: (i: HistoryItem) => void, isDark: boolean }) => {
     return (
-        <div className="relative py-8 pl-8 pr-4">
+        <div className="relative py-8 ps-8 pe-4">
             {/* The Axis Line */}
-            <div className={`absolute left-10 top-0 bottom-0 w-0.5 ${isDark ? 'bg-gradient-to-b from-transparent via-indigo-500/50 to-transparent' : 'bg-gradient-to-b from-transparent via-indigo-300 to-transparent'}`}></div>
+            <div className={`absolute start-10 top-0 bottom-0 w-0.5 ${isDark ? 'bg-gradient-to-b from-transparent via-indigo-500/50 to-transparent' : 'bg-gradient-to-b from-transparent via-indigo-300 to-transparent'}`}></div>
 
             <div className="space-y-8">
                 {items.map((item, index) => {
                     return (
                         <div key={item.id} className="relative flex items-center group">
                             {/* The Node on the Axis */}
-                            <div className="absolute left-[8px] z-10 w-3 h-3 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)] border-2 border-white ring-4 ring-black"></div>
+                            <div className="absolute start-[8px] z-10 w-3 h-3 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)] border-2 border-white ring-4 ring-black"></div>
                             
                             {/* Connection Line */}
-                            <div className={`absolute left-[20px] w-8 h-[1px] ${isDark ? 'bg-white/20' : 'bg-black/10'}`}></div>
+                            <div className={`absolute start-[20px] w-8 h-[1px] ${isDark ? 'bg-white/20' : 'bg-black/10'}`}></div>
 
                             {/* The Card */}
                             <div 
                                 onClick={() => onSelect(item)}
-                                className={`ml-12 flex-1 p-3 rounded-xl border flex gap-3 items-center cursor-pointer transition-all active:scale-95 hover:scale-[1.02] ${isDark ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-white border-gray-100 hover:shadow-md'}`}
+                                className={`ms-12 flex-1 p-3 rounded-xl border flex gap-3 items-center cursor-pointer transition-all active:scale-95 hover:scale-[1.02] ${isDark ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-white border-gray-100 hover:shadow-md'}`}
                             >
                                 <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-white/10">
                                     {item.thumbnail ? (
@@ -128,9 +128,11 @@ const AxisMap = ({ items, onSelect, isDark }: { items: HistoryItem[], onSelect: 
     );
 };
 
-export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onClose, theme, language, onShowNotification }) => {
+export const HistoryView: React.FC<HistoryViewProps> = ({ onSelect, onClose, onShowNotification }) => {
+  const { t } = useTranslation();
+  const { theme, language } = useSettingsStore();
+  const { history } = useHistoryStore();
   const isDark = theme === 'dark';
-  const t = TRANSLATIONS[language].history;
 
   // Recap State
   const [showRecap, setShowRecap] = useState(false);
@@ -147,7 +149,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onC
     });
 
     if (items.length === 0) {
-        onShowNotification?.(t.noItemsToday);
+        onShowNotification?.(t('history.noItemsToday'));
         return;
     }
 
@@ -180,14 +182,14 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onC
         
         {/* Header */}
         <div className={`pt-12 px-6 pb-6 flex items-center justify-between border-b backdrop-blur-md sticky top-0 z-10 ${headerBgClass}`}>
-            <h1 className="text-3xl font-thin tracking-wider animate-fade-in-up">{t.title}</h1>
+            <h1 className="text-3xl font-thin tracking-wider animate-fade-in-up">{t('history.title')}</h1>
             <div className="flex gap-3">
                 <button 
                     onClick={handleRecapClick}
                     className={`flex items-center gap-2 px-4 py-2 rounded-full transition-transform active:scale-95 border ${isDark ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}
                 >
                     <IconJournal className="w-4 h-4" />
-                    <span className="text-sm font-medium">{t.recapButton}</span>
+                    <span className="text-sm font-medium">{t('history.recapButton')}</span>
                 </button>
                 <button 
                     onClick={onClose} 
@@ -202,8 +204,8 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onC
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {history.length === 0 ? (
                 <div className={`flex flex-col items-center justify-center h-64 ${subTextClass} animate-fade-in-up delay-200`}>
-                    <p>{t.empty}</p>
-                    <p className="text-sm mt-2 opacity-60">{t.emptySub}</p>
+                    <p>{t('history.empty')}</p>
+                    <p className="text-sm mt-2 opacity-60">{t('history.emptySub')}</p>
                 </div>
             ) : (
                 history.map((item, index) => (
@@ -248,7 +250,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onC
                  {/* Close Button - Fixed relative to viewport so it is always accessible */}
                  <button 
                     onClick={() => setShowRecap(false)}
-                    className="fixed top-6 right-6 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 active:scale-90 z-[60] border border-white/5 backdrop-blur-md"
+                    className="fixed top-6 end-6 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 active:scale-90 z-[60] border border-white/5 backdrop-blur-md"
                  >
                     <IconChevronDown className="w-6 h-6" />
                  </button>
@@ -261,10 +263,10 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onC
                          <div className="flex flex-col items-center justify-center gap-8">
                              <div className="relative w-24 h-24">
                                  <div className="absolute inset-0 border-t-2 border-indigo-500 rounded-full animate-spin"></div>
-                                 <div className="absolute inset-2 border-r-2 border-purple-500 rounded-full animate-spin reverse"></div>
+                                 <div className="absolute inset-2 border-e-2 border-purple-500 rounded-full animate-spin reverse"></div>
                                  <div className="absolute inset-4 border-b-2 border-pink-500 rounded-full animate-spin"></div>
                              </div>
-                             <p className={`text-sm tracking-[0.2em] animate-pulse font-mono uppercase ${isDark ? 'text-gray-400' : 'text-gray-200'}`}>{t.writing}</p>
+                             <p className={`text-sm tracking-[0.2em] animate-pulse font-mono uppercase ${isDark ? 'text-gray-400' : 'text-gray-200'}`}>{t('history.writing')}</p>
                          </div>
                      )}
 
@@ -274,8 +276,8 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onC
                              
                              {/* Abstract Header Background */}
                              <div className="absolute top-0 inset-x-0 h-64 overflow-hidden pointer-events-none">
-                                 <div className={`absolute -top-20 -left-20 w-64 h-64 rounded-full blur-[80px] opacity-40 ${isDark ? 'bg-indigo-600' : 'bg-indigo-300'}`}></div>
-                                 <div className={`absolute top-0 right-0 w-40 h-40 rounded-full blur-[60px] opacity-30 ${isDark ? 'bg-purple-600' : 'bg-purple-300'}`}></div>
+                                 <div className={`absolute -top-20 -start-20 w-64 h-64 rounded-full blur-[80px] opacity-40 ${isDark ? 'bg-indigo-600' : 'bg-indigo-300'}`}></div>
+                                 <div className={`absolute top-0 end-0 w-40 h-40 rounded-full blur-[60px] opacity-30 ${isDark ? 'bg-purple-600' : 'bg-purple-300'}`}></div>
                              </div>
 
                              {/* --- SECTION 1: Resonance (Philosophy) --- */}
@@ -309,11 +311,11 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history, onSelect, onC
                                  <div className="p-8 pb-32">
                                      <div className="flex items-center gap-3 mb-6">
                                          <div className="w-2 h-8 bg-indigo-500 rounded-full"></div>
-                                         <h3 className={`text-xl font-thin tracking-widest uppercase ${isDark ? 'text-white' : 'text-gray-900'}`}>{t.dailyJournal}</h3>
+                                         <h3 className={`text-xl font-thin tracking-widest uppercase ${isDark ? 'text-white' : 'text-gray-900'}`}>{t('history.dailyJournal')}</h3>
                                      </div>
                                      
                                      {/* Journal Text */}
-                                     <p className={`font-serif text-base italic leading-loose mb-8 pl-4 border-l ${isDark ? 'text-gray-400 border-white/10' : 'text-gray-600 border-black/10'}`}>
+                                     <p className={`font-serif text-base italic leading-loose mb-8 ps-4 border-s ${isDark ? 'text-gray-400 border-white/10' : 'text-gray-600 border-black/10'}`}>
                                          "{recapData.journal}"
                                      </p>
 

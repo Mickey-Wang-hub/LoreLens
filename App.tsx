@@ -1,7 +1,8 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { decipherImage } from './services/geminiService';
-import { DecipherResult, HistoryItem, ViewState, AppTheme, AppFontSize, AppLanguage } from './types';
+import { DecipherResult, HistoryItem, ViewState } from './types';
+import { triggerHaptic } from './utils';
 import { ResultDrawer } from './components/ResultDrawer';
 import { HistoryView } from './components/HistoryView';
 import { SettingsView } from './components/SettingsView';
@@ -9,6 +10,8 @@ import { MapView } from './components/MapView';
 import { HomeView } from './components/HomeView';
 import { CropView } from './components/CropView';
 import { IconCamera, IconHistory, IconSettings, IconSparkles, IconMap, IconChevronUp, IconPhoto } from './components/Icons';
+import { useSettingsStore } from './store/useSettingsStore';
+import { useHistoryStore } from './store/useHistoryStore';
 
 const App: React.FC = () => {
   // State
@@ -19,19 +22,15 @@ const App: React.FC = () => {
   const [isCropping, setIsCropping] = useState(false); // New State for Crop Mode
   const [currentResult, setCurrentResult] = useState<DecipherResult | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [history, setHistory] = useState<HistoryItem[]>([]);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   
   // Camera Optimization State
   const streamRef = useRef<MediaStream | null>(null);
   const [isCameraReady, setIsCameraReady] = useState(false);
 
-  // Settings State
-  const [saveToGallery, setSaveToGallery] = useState(false); 
-  const [highResAudio, setHighResAudio] = useState(false);
-  const [theme, setTheme] = useState<AppTheme>('dark');
-  const [fontSize, setFontSize] = useState<AppFontSize>('medium');
-  const [language, setLanguage] = useState<AppLanguage>('en');
+  // Stores
+  const { theme, language, fontSize, saveToGallery, highResAudio } = useSettingsStore();
+  const { history, setHistory, loadHistory } = useHistoryStore();
   
   // Notification State
   const [notification, setNotification] = useState<string | null>(null);
@@ -46,45 +45,19 @@ const App: React.FC = () => {
       setTimeout(() => setNotification(null), 3000);
   };
 
-  // Load Data from LocalStorage on mount
+  // Load Data from Storage on mount
   useEffect(() => {
-    try {
-        const savedHistory = localStorage.getItem('context_lens_history');
-        if (savedHistory) {
-            setHistory(JSON.parse(savedHistory));
-        }
+    loadHistory();
+  }, [loadHistory]);
 
-        const savedSettings = localStorage.getItem('context_lens_settings');
-        if (savedSettings) {
-            const settings = JSON.parse(savedSettings);
-            setSaveToGallery(settings.saveToGallery ?? false);
-            setHighResAudio(settings.highResAudio ?? false);
-            setTheme(settings.theme ?? 'dark');
-            setFontSize(settings.fontSize ?? 'medium');
-            setLanguage(settings.language ?? 'en');
-        }
-    } catch (e) {
-        console.warn("Failed to load data from storage", e);
-    }
-  }, []);
-
-  // Save History to LocalStorage
+  // Sync language with i18next
   useEffect(() => {
-    try {
-        localStorage.setItem('context_lens_history', JSON.stringify(history));
-    } catch (e) {
-        console.warn("Storage quota exceeded", e);
-    }
-  }, [history]);
-
-  // Save Settings to LocalStorage
-  useEffect(() => {
-      try {
-        localStorage.setItem('context_lens_settings', JSON.stringify({ saveToGallery, highResAudio, theme, fontSize, language }));
-      } catch (e) {
-        console.warn("Failed to save settings", e);
-      }
-  }, [saveToGallery, highResAudio, theme, fontSize, language]);
+      import('i18next').then(({ default: i18n }) => {
+          if (i18n.language !== language) {
+              i18n.changeLanguage(language);
+          }
+      });
+  }, [language]);
 
   // Apply Font Size
   useEffect(() => {
@@ -193,6 +166,7 @@ const App: React.FC = () => {
 
   // Handle Capture
   const handleCapture = useCallback(async () => {
+     triggerHaptic(50);
      if (!videoRef.current) return;
 
      const video = videoRef.current;
@@ -244,6 +218,7 @@ const App: React.FC = () => {
 
   // Called after Crop is confirmed
   const handleCropConfirm = async (croppedBase64: string) => {
+      triggerHaptic([50, 50]);
       setIsCropping(false);
       setCapturedImage(croppedBase64); // Update displayed image to the cropped version
       
@@ -358,8 +333,6 @@ const App: React.FC = () => {
                 imageSrc={capturedImage}
                 onConfirm={handleCropConfirm}
                 onCancel={resetCamera}
-                theme={theme}
-                language={language}
             />
         )}
         
@@ -462,7 +435,7 @@ const App: React.FC = () => {
 
         {(capturedImage && !isCropping || isDrawerOpen) && (
             <>
-                <div className="absolute top-12 left-6 z-50 animate-fade-in-up">
+                <div className="absolute top-12 start-6 z-50 animate-fade-in-up">
                     <button 
                         onClick={resetCamera}
                         className="p-3 rounded-full bg-black/50 backdrop-blur-md text-white border border-white/10 shadow-lg active:scale-90 transition-transform"
@@ -495,8 +468,6 @@ const App: React.FC = () => {
                 onScanStart={startScan}
                 onOpenHistory={openHistory}
                 onOpenSettings={openSettings}
-                theme={theme}
-                language={language}
               />
           </div>
       )}
@@ -506,22 +477,16 @@ const App: React.FC = () => {
         result={currentResult} 
         isOpen={isDrawerOpen} 
         onClose={() => setIsDrawerOpen(false)}
-        showAudioPlayer={highResAudio}
-        theme={theme}
-        language={language}
         onShowNotification={showNotification}
       />
 
       {/* History View */}
       {viewState === ViewState.HISTORY && (
           <HistoryView 
-            history={history} 
             onSelect={handleHistorySelect} 
             onClose={() => {
                 setViewState(ViewState.CAMERA);
             }} 
-            theme={theme}
-            language={language}
             onShowNotification={showNotification}
           />
       )}
@@ -529,10 +494,7 @@ const App: React.FC = () => {
       {/* Map View */}
       {viewState === ViewState.MAP && (
           <MapView 
-            history={history} 
             onClose={() => setViewState(ViewState.CAMERA)} 
-            theme={theme}
-            language={language}
           />
       )}
 
@@ -543,22 +505,6 @@ const App: React.FC = () => {
                 setViewState(ViewState.CAMERA);
                 setIsHomeOpen(true);
             }} 
-            clearHistory={() => {
-                setHistory([]);
-                localStorage.removeItem('context_lens_history');
-                showNotification("History Cleared!");
-            }}
-            saveToGallery={saveToGallery}
-            setSaveToGallery={setSaveToGallery}
-            highResAudio={highResAudio}
-            setHighResAudio={setHighResAudio}
-            historyCount={history.length}
-            theme={theme}
-            setTheme={setTheme}
-            fontSize={fontSize}
-            setFontSize={setFontSize}
-            language={language}
-            setLanguage={setLanguage}
           />
       )}
 

@@ -1,16 +1,16 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { AppTheme, DecipherResult, AppLanguage, TRANSLATIONS } from '../types';
+import { useTranslation } from 'react-i18next';
+import { DecipherResult } from '../types';
+import { triggerHaptic } from '../utils';
 import { IconChevronDown, IconShare, IconSpeaker } from './Icons';
 import { generateSpeech } from '../services/geminiService';
+import { useSettingsStore } from '../store/useSettingsStore';
 
 interface ResultDrawerProps {
   result: DecipherResult | null;
   isOpen: boolean;
   onClose: () => void;
-  showAudioPlayer?: boolean;
-  theme: AppTheme;
-  language: AppLanguage;
   onShowNotification?: (msg: string) => void;
 }
 
@@ -25,44 +25,61 @@ const base64ToUint8Array = (base64: string) => {
   return bytes;
 };
 
-// Helper: Convert PCM Data to AudioBuffer
-const pcmToAudioBuffer = (data: Uint8Array, ctx: AudioContext) => {
-    const sampleRate = 24000;
-    const numChannels = 1;
-    const dataInt16 = new Int16Array(data.buffer);
-    const buffer = ctx.createBuffer(numChannels, dataInt16.length, sampleRate);
-    const channelData = buffer.getChannelData(0);
-    for (let i = 0; i < dataInt16.length; i++) {
-        channelData[i] = dataInt16[i] / 32768.0;
+// Helper: Convert PCM Data to WAV Blob
+const createWavBlob = (data: Uint8Array, sampleRate: number): Blob => {
+  const numChannels = 1;
+  const byteRate = sampleRate * numChannels * 2;
+  const blockAlign = numChannels * 2;
+  const dataInt16 = new Int16Array(data.buffer);
+  const buffer = new ArrayBuffer(44 + dataInt16.length * 2);
+  const view = new DataView(buffer);
+
+  const writeString = (offset: number, string: string) => {
+    for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
     }
-    return buffer;
+  };
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + dataInt16.length * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, dataInt16.length * 2, true);
+
+  let offset = 44;
+  for (let i = 0; i < dataInt16.length; i++) {
+      view.setInt16(offset, dataInt16[i], true);
+      offset += 2;
+  }
+
+  return new Blob([view], { type: 'audio/wav' });
 };
 
 export const ResultDrawer: React.FC<ResultDrawerProps> = ({ 
     result, 
     isOpen, 
     onClose, 
-    showAudioPlayer = false, 
-    theme,
-    language,
     onShowNotification
 }) => {
+  const { t } = useTranslation();
+  const { theme, highResAudio: showAudioPlayer, language } = useSettingsStore();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
-  
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const sourceRef = useRef<AudioBufferSourceNode | null>(null);
-
-  const t = TRANSLATIONS[language].result;
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const stopAudio = () => {
-    if (sourceRef.current) {
-      try {
-        sourceRef.current.stop();
-      } catch (e) {
-        // Ignore errors
-      }
-      sourceRef.current = null;
+    if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
     }
     setIsPlaying(false);
     setIsLoadingAudio(false);
@@ -71,40 +88,77 @@ export const ResultDrawer: React.FC<ResultDrawerProps> = ({
   useEffect(() => {
     if (!isOpen) {
       stopAudio();
+      if (audioUrl) {
+          URL.revokeObjectURL(audioUrl);
+          setAudioUrl(null);
+      }
+    } else {
+      triggerHaptic(50);
     }
   }, [isOpen]);
 
   const handlePlayAudio = async () => {
     if (!result) return;
     if (isPlaying || isLoadingAudio) {
-      stopAudio();
+      if (audioRef.current) {
+         if (isPlaying) {
+             audioRef.current.pause();
+             setIsPlaying(false);
+         } else {
+             audioRef.current.play();
+             setIsPlaying(true);
+         }
+      }
       return;
     }
+
+    if (audioUrl && audioRef.current) {
+       audioRef.current.play();
+       setIsPlaying(true);
+       return;
+    }
+
     setIsLoadingAudio(true);
     try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      }
-      if (audioContextRef.current.state === 'suspended') {
-        await audioContextRef.current.resume();
-      }
-      const text = `${result.title}. ${result.essence}. ${t.mirror}: ${result.mirrorInsight}.`;
+      const text = `${result.title}. ${result.essence}. ${t('result.mirror')}: ${result.mirrorInsight}.`;
       const base64Audio = await generateSpeech(text);
       const audioBytes = base64ToUint8Array(base64Audio);
-      const audioBuffer = pcmToAudioBuffer(audioBytes, audioContextRef.current);
-      const source = audioContextRef.current.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContextRef.current.destination);
-      source.onended = () => {
-        setIsPlaying(false);
-        sourceRef.current = null;
-      };
-      sourceRef.current = source;
-      source.start();
-      setIsPlaying(true);
+      const wavBlob = createWavBlob(audioBytes, 24000);
+      const blobUrl = URL.createObjectURL(wavBlob);
+      setAudioUrl(blobUrl);
+
+      if (audioRef.current) {
+          audioRef.current.src = blobUrl;
+          
+          if ('mediaSession' in navigator) {
+              navigator.mediaSession.metadata = new MediaMetadata({
+                  title: result.title,
+                  artist: "Context Lens",
+                  artwork: [
+                      { src: '/icon.svg', sizes: '512x512', type: 'image/svg+xml' }
+                  ]
+              });
+              
+              navigator.mediaSession.setActionHandler('play', () => {
+                  audioRef.current?.play();
+                  setIsPlaying(true);
+              });
+              navigator.mediaSession.setActionHandler('pause', () => {
+                  audioRef.current?.pause();
+                  setIsPlaying(false);
+              });
+          }
+
+          audioRef.current.play().then(() => {
+              setIsPlaying(true);
+              setIsLoadingAudio(false);
+          }).catch(err => {
+              console.error("Playback failed", err);
+              setIsLoadingAudio(false);
+          });
+      }
     } catch (error) {
       console.error("Failed to play audio:", error);
-    } finally {
       setIsLoadingAudio(false);
     }
   };
@@ -125,9 +179,9 @@ export const ResultDrawer: React.FC<ResultDrawerProps> = ({
     }
     try {
         await navigator.clipboard.writeText(`${text}\n${url}`);
-        onShowNotification?.(t.share);
+        onShowNotification?.(t('result.share'));
     } catch (e) {
-        onShowNotification?.(t.shareError);
+        onShowNotification?.(t('result.shareError'));
     }
   };
 
@@ -171,14 +225,21 @@ export const ResultDrawer: React.FC<ResultDrawerProps> = ({
         <div className={`rounded-t-[2.5rem] border-t shadow-[0_-10px_40px_rgba(0,0,0,0.3)] overflow-hidden h-[85vh] overflow-y-auto no-scrollbar ${cardBg}`}>
             {/* Background Glow */}
             {isDark && (
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-32 bg-indigo-500/10 blur-[60px] pointer-events-none" />
+                <div className="absolute top-0 start-1/2 rtl:translate-x-1/2 -translate-x-1/2 w-3/4 h-32 bg-indigo-500/10 blur-[60px] pointer-events-none" />
             )}
+
+            <audio 
+                ref={audioRef} 
+                src={audioUrl || undefined} 
+                onEnded={() => setIsPlaying(false)} 
+                className="hidden" 
+            />
 
             <div className="p-8 pb-16 space-y-8 relative">
                 
                 {/* Header: Title & Actions */}
                 <div className="flex justify-between items-start animate-fade-in-up delay-100">
-                    <h2 className={`text-4xl font-extralight tracking-tight pr-4 leading-tight ${textMain}`}>
+                    <h2 className={`text-4xl font-extralight tracking-tight pe-4 leading-tight ${textMain}`}>
                         {result.title}
                     </h2>
                     <div className="flex gap-3 shrink-0 mt-1">
@@ -210,7 +271,7 @@ export const ResultDrawer: React.FC<ResultDrawerProps> = ({
 
                 {/* The Essence */}
                 <div className={`p-6 rounded-3xl border border-white/5 animate-fade-in-up delay-200 ${essenceBg}`}>
-                    <h3 className={`text-xs font-bold uppercase tracking-[0.2em] mb-3 opacity-60 ${textMain}`}>{t.essence}</h3>
+                    <h3 className={`text-xs font-bold uppercase tracking-[0.2em] mb-3 opacity-60 ${textMain}`}>{t('result.essence')}</h3>
                     <p className={`text-xl font-medium leading-relaxed ${textMain}`}>
                         {result.essence}
                     </p>
@@ -224,7 +285,7 @@ export const ResultDrawer: React.FC<ResultDrawerProps> = ({
                     <div className="relative z-10">
                         <h3 className={`text-xs font-bold uppercase tracking-[0.2em] mb-3 flex items-center gap-2 ${mirrorText}`}>
                             <span className="w-2 h-2 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse"></span>
-                            {t.mirror}
+                            {t('result.mirror')}
                         </h3>
                         <p className={`text-lg italic font-serif leading-relaxed opacity-90 ${mirrorText}`}>
                             "{result.mirrorInsight}"
@@ -233,9 +294,9 @@ export const ResultDrawer: React.FC<ResultDrawerProps> = ({
                 </div>
 
                 {/* Philosophy */}
-                <div className="animate-fade-in-up delay-400 pl-2 border-l-2 border-white/10">
-                    <h3 className={`text-xs font-bold uppercase tracking-[0.2em] mb-2 pl-4 ${textMuted}`}>{t.philosophy}</h3>
-                    <p className={`text-base font-light leading-relaxed pl-4 ${textSub}`}>
+                <div className="animate-fade-in-up delay-400 ps-2 border-s-2 border-white/10">
+                    <h3 className={`text-xs font-bold uppercase tracking-[0.2em] mb-2 ps-4 ${textMuted}`}>{t('result.philosophy')}</h3>
+                    <p className={`text-base font-light leading-relaxed ps-4 ${textSub}`}>
                         {result.philosophy}
                     </p>
                 </div>
@@ -246,8 +307,18 @@ export const ResultDrawer: React.FC<ResultDrawerProps> = ({
                          <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                     </div>
                     <div>
-                        <h3 className={`text-sm font-bold uppercase tracking-wide mb-1 opacity-80 ${actionText}`}>{t.action}</h3>
+                        <h3 className={`text-sm font-bold uppercase tracking-wide mb-1 opacity-80 ${actionText}`}>{t('result.action')}</h3>
                         <p className={`text-base ${actionText}`}>{result.quickAction}</p>
+                        {result.mapUri && (
+                            <a 
+                                href={result.mapUri} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className={`inline-block mt-3 text-sm font-medium underline underline-offset-4 ${actionText} hover:opacity-80`}
+                            >
+                                {t('map.openMaps')}
+                            </a>
+                        )}
                     </div>
                 </div>
                 
