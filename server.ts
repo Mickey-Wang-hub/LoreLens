@@ -10,7 +10,7 @@ async function startServer() {
   // Increase payload limit for base64 images
   app.use(express.json({ limit: '50mb' }));
 
-  const apiKey = "AIzaSyCWXmCnp9xETwL7bAQ4VtHpyMH3x5F6IXA" || process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+  const apiKey = "AIzaSyDTA_ZvYnYIyMXccN_HCGH_RTcZvbbj2w8" || process.env.GEMINI_API_KEY || process.env.API_KEY || "";
 
   const ai = new GoogleGenAI({
     apiKey: apiKey,
@@ -29,11 +29,13 @@ async function startServer() {
       errText.includes("API_KEY_INVALID") || 
       errText.includes("API key not valid") || 
       errText.includes("INVALID_ARGUMENT") ||
-      errText.includes("invalid api key")
+      errText.includes("invalid api key") ||
+      errText.includes("leaked") ||
+      errText.includes("PERMISSION_DENIED")
     ) {
       return res.status(400).json({
-        error: "Invalid API Key",
-        details: "Your Gemini API Key is invalid or has expired. Please verify your API Key is correctly entered in the **Settings > Secrets** panel in AI Studio."
+        error: "Invalid or Leaked API Key",
+        details: "Your current Gemini API Key was either reported as leaked, invalid, or has expired. Please verify and update your API Key under **Settings > Secrets** in AI Studio."
       });
     }
 
