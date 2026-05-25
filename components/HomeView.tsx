@@ -14,8 +14,8 @@ interface HomeViewProps {
 const APP_NAME = 'Context Lens';
 
 // Safe Fallback Assets
-const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1508804185872-d7badad00f7d?auto=format&fit=crop&w=800&q=80"; // Red wall texture
-const FALLBACK_CREDIT = { name: "Zhang Kaiyv", link: "https://unsplash.com/@zhangkaiyv" };
+const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=800&q=80"; // Atmospheric cozy street light view
+const FALLBACK_CREDIT = { name: "Clem Onojeghuo", link: "https://unsplash.com/@clemono" };
 
 const FALLBACK_CITY_I18N: Record<AppLanguage, string> = {
   en: "Beijing",
@@ -71,22 +71,22 @@ const INSIGHTS_DB = [
         city: "Beijing",
         items: [
             {
-                quote: "Roof guardians watch over the city's soul, not just its rain.",
-                author: "A Cultural Note",
-                title: "Forbidden City Roofs",
-                keywords: "forbidden city roof detail"
+                quote: "Hidden cafe corners and narrow alleys hold the true, unhurried rhythm of local life.",
+                author: "Urban Explorer",
+                title: "Corner Vibe",
+                keywords: "cozy neighborhood cafe aesthetic exterior"
             },
             {
-                quote: "In the Hutongs, silence speaks louder than the bustle of the main roads.",
-                author: "Urban Echoes",
-                title: "Hutong Life",
-                keywords: "beijing hutong street"
+                quote: "When the golden hour paint strokes the rooftops, the city stops for a moment to breathe.",
+                author: "The Wanderer",
+                title: "Golden Hour Street",
+                keywords: "city rooftops golden hour sunset aesthetic"
             },
             {
-                quote: "The Red Wall reflects not just history, but the endurance of memory.",
+                quote: "The texture of weathered bricks and timeless stone reflects the quiet endurance of memory.",
                 author: "History Whisperer",
-                title: "Imperial Walls",
-                keywords: "forbidden city red wall"
+                title: "Timeless Architecture",
+                keywords: "city historic building entry facade"
             }
         ]
     },

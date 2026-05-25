@@ -10,7 +10,7 @@ async function startServer() {
   // Increase payload limit for base64 images
   app.use(express.json({ limit: '50mb' }));
 
-  const apiKey = "AIzaSyDTA_ZvYnYIyMXccN_HCGH_RTcZvbbj2w8" || process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
 
   const ai = new GoogleGenAI({
     apiKey: apiKey,
