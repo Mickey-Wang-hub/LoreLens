@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { registerSW } from 'virtual:pwa-register';
 import './i18n';
+import './index.css';
 
 // Register service worker
 const updateSW = registerSW({

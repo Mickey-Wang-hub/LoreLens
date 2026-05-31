@@ -6,6 +6,7 @@ import { IconChevronDown, IconJournal } from './Icons';
 import { generateDailyRecap } from '../services/geminiService';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useHistoryStore } from '../store/useHistoryStore';
+import { getAccentStyles } from '../utils/accent';
 
 interface HistoryViewProps {
   onSelect: (item: HistoryItem) => void;
@@ -17,6 +18,8 @@ interface HistoryViewProps {
 
 // 1. Resonance Fractal: A dynamic, math-y geometric shape
 const ResonanceFractal = ({ score, isDark }: { score: number, isDark: boolean }) => {
+    const { accentColor } = useSettingsStore();
+
     // Generate polygon points based on score
     const sides = 7;
     const radius = 60;
@@ -37,13 +40,30 @@ const ResonanceFractal = ({ score, isDark }: { score: number, isDark: boolean })
     const scale = 0.5 + (score / 200); // 0.5 to 1.0
     const dash = score > 90 ? "none" : "2,2";
 
-    const mainColor = isDark ? "#818cf8" : "#4f46e5"; // Indigo
-    const secColor = isDark ? "#c084fc" : "#9333ea"; // Purple
+    // Dynamic accent hex codes
+    const hexMap = {
+        indigo: { main: isDark ? "#818cf8" : "#4f46e5", sec: isDark ? "#c084fc" : "#9333ea" },
+        teal: { main: isDark ? "#2dd4bf" : "#0d9488", sec: isDark ? "#38bdf8" : "#0284c7" },
+        amber: { main: isDark ? "#fbbf24" : "#d97706", sec: isDark ? "#f43f5e" : "#e11d48" },
+        violet: { main: isDark ? "#a78bfa" : "#7c3aed", sec: isDark ? "#f472b6" : "#db2777" },
+    };
+    const cPreset = hexMap[accentColor] || hexMap.indigo;
+
+    const mainColor = cPreset.main;
+    const secColor = cPreset.sec;
+
+    const auraClassMap = {
+        indigo: isDark ? 'bg-indigo-500' : 'bg-indigo-300',
+        teal: isDark ? 'bg-teal-500' : 'bg-teal-300',
+        amber: isDark ? 'bg-amber-500' : 'bg-amber-300',
+        violet: isDark ? 'bg-violet-500' : 'bg-violet-300'
+    };
+    const auraClass = auraClassMap[accentColor] || auraClassMap.indigo;
 
     return (
         <div className="relative w-40 h-40 flex items-center justify-center">
             {/* Spinning background Aura */}
-            <div className={`absolute inset-0 rounded-full blur-2xl opacity-20 ${isDark ? 'bg-indigo-500' : 'bg-indigo-300'}`} style={{ transform: `scale(${scale})` }}></div>
+            <div className={`absolute inset-0 rounded-full blur-2xl opacity-20 ${auraClass}`} style={{ transform: `scale(${scale})` }}></div>
             
             <svg width="160" height="160" viewBox="0 0 160 160" className="animate-[spin_20s_linear_infinite]">
                  {/* Outer Geometric Ring */}
@@ -88,17 +108,20 @@ const ResonanceFractal = ({ score, isDark }: { score: number, isDark: boolean })
 
 // 2. Axis Map: A vertical timeline connected by glowing lines
 const AxisMap = ({ items, onSelect, isDark }: { items: HistoryItem[], onSelect: (i: HistoryItem) => void, isDark: boolean }) => {
+    const { accentColor } = useSettingsStore();
+    const accent = getAccentStyles(accentColor, isDark);
+    
     return (
         <div className="relative py-8 ps-8 pe-4">
             {/* The Axis Line */}
-            <div className={`absolute start-10 top-0 bottom-0 w-0.5 ${isDark ? 'bg-gradient-to-b from-transparent via-indigo-500/50 to-transparent' : 'bg-gradient-to-b from-transparent via-indigo-300 to-transparent'}`}></div>
+            <div className={`absolute start-10 top-0 bottom-0 w-0.5 bg-gradient-to-b from-transparent ${accent.gradientFrom} to-transparent`}></div>
 
             <div className="space-y-8">
                 {items.map((item, index) => {
                     return (
                         <div key={item.id} className="relative flex items-center group">
                             {/* The Node on the Axis */}
-                            <div className="absolute start-[8px] z-10 w-3 h-3 rounded-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.8)] border-2 border-white ring-4 ring-black"></div>
+                            <div className={`absolute start-[8px] z-10 w-3 h-3 rounded-full ${accent.bg} ${accent.dotPulse} border-2 border-white ring-4 ring-black`}></div>
                             
                             {/* Connection Line */}
                             <div className={`absolute start-[20px] w-8 h-[1px] ${isDark ? 'bg-white/20' : 'bg-black/10'}`}></div>
@@ -130,7 +153,7 @@ const AxisMap = ({ items, onSelect, isDark }: { items: HistoryItem[], onSelect: 
 
 export const HistoryView: React.FC<HistoryViewProps> = ({ onSelect, onClose, onShowNotification }) => {
   const { t } = useTranslation();
-  const { theme, language } = useSettingsStore();
+  const { theme, language, accentColor, reduceMotion } = useSettingsStore();
   const { history, setHistory } = useHistoryStore();
   const isDark = theme === 'dark';
 
@@ -199,11 +222,15 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onSelect, onClose, onS
   };
 
   // Styles
+  const accent = getAccentStyles(accentColor, isDark);
+  const animFadeIn = reduceMotion ? '' : 'animate-fade-in';
+  const animFadeInUp = reduceMotion ? '' : 'animate-fade-in-up';
+  
   const bgClass = isDark ? 'bg-black text-white' : 'bg-gray-50 text-gray-900';
   const headerBgClass = isDark ? 'bg-black/60 border-white/10' : 'bg-white/80 border-gray-200';
   const itemBgClass = isDark ? 'bg-neutral-900 border-white/5 active:bg-neutral-800' : 'bg-white border-gray-200 shadow-sm active:bg-gray-50';
   const subTextClass = isDark ? 'text-gray-500' : 'text-gray-400';
-  const accentTextClass = isDark ? 'text-indigo-400' : 'text-indigo-600';
+  const accentTextClass = accent.text;
   const iconBtnClass = isDark ? 'bg-white/10 hover:bg-white/20' : 'bg-gray-100 hover:bg-gray-200 text-gray-600';
 
   return (
@@ -213,12 +240,12 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onSelect, onClose, onS
         <div className={`pt-12 px-6 pb-6 flex items-center justify-between border-b backdrop-blur-md sticky top-0 z-10 ${headerBgClass}`}>
             {isEditMode ? (
                 <div className="flex items-center gap-2">
-                    <span className="text-xl font-light tracking-wide animate-fade-in">
+                    <span className={`text-xl font-light tracking-wide ${animFadeIn}`}>
                         {language === 'zh' ? `已选择 ${selectedIds.length} 项` : `${selectedIds.length} Selected`}
                     </span>
                 </div>
             ) : (
-                <h1 className="text-3xl font-thin tracking-wider animate-fade-in-up">{t('history.title')}</h1>
+                <h1 className={`text-3xl font-thin tracking-wider ${animFadeInUp}`}>{t('history.title')}</h1>
             )}
             
             <div className="flex items-center gap-2">
@@ -228,7 +255,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onSelect, onClose, onS
                             onClick={toggleSelectAll}
                             className={`px-3 py-1.5 rounded-full text-xs font-mono tracking-wider transition-all active:scale-95 border ${
                                 selectedIds.length === history.length && history.length > 0
-                                    ? (isDark ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-indigo-100 text-indigo-700 border-indigo-200')
+                                    ? accent.btnActive
                                     : (isDark ? 'bg-white/5 border-white/10 hover:bg-white/10' : 'bg-white border-gray-200 hover:bg-gray-50')
                             }`}
                         >
@@ -252,7 +279,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ onSelect, onClose, onS
                             <>
                                 <button 
                                     onClick={handleRecapClick}
-                                    className={`flex items-center gap-2 px-4 py-2 rounded-full transition-transform active:scale-95 border ${isDark ? 'bg-indigo-500/10 text-indigo-300 border-indigo-500/30' : 'bg-indigo-50 text-indigo-700 border-indigo-200'}`}
+                                    className={`flex items-center gap-2 px-4 py-2 rounded-full transition-transform active:scale-95 border ${accent.lightBg} ${accent.text} ${accent.border}`}
                                 >
                                     <IconJournal className="w-4 h-4" />
                                     <span className="text-sm font-medium">{t('history.recapButton')}</span>

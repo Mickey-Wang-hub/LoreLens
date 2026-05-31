@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { decipherImage } from './services/geminiService';
 import { DecipherResult, HistoryItem, ViewState } from './types';
-import { triggerHaptic } from './utils';
+import { triggerHaptic, compressHistoryImage } from './utils';
 import { ResultDrawer } from './components/ResultDrawer';
 import { HistoryView } from './components/HistoryView';
 import { SettingsView } from './components/SettingsView';
@@ -251,11 +251,13 @@ const App: React.FC = () => {
         setCurrentResult(result);
         setIsDrawerOpen(true);
         
+        const compressedThumbnail = await compressHistoryImage(base64);
+
         const newItem: HistoryItem = {
             ...result,
             id: Date.now().toString(),
             timestamp: Date.now(),
-            thumbnail: base64,
+            thumbnail: compressedThumbnail,
             location: location
         };
         setHistory(prev => [newItem, ...prev]);

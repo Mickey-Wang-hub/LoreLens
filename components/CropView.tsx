@@ -17,8 +17,42 @@ export const CropView: React.FC<CropViewProps> = ({ imageSrc, onConfirm, onCance
   const imageRef = useRef<HTMLImageElement>(null);
   const isDragging = useRef<string | null>(null); // 'move', 'tl', 'tr', 'bl', 'br'
   const lastPos = useRef<{ x: number; y: number } | null>(null);
+  const [imageRect, setImageRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
 
   const isDark = theme === 'dark';
+
+  const updateImageRect = () => {
+    if (!containerRef.current || !imageRef.current) return;
+    const container = containerRef.current.getBoundingClientRect();
+    const img = imageRef.current;
+    if (!img.naturalWidth || !img.naturalHeight) return;
+
+    const ratio = Math.min(container.width / img.naturalWidth, container.height / img.naturalHeight);
+    const renderedWidth = img.naturalWidth * ratio;
+    const renderedHeight = img.naturalHeight * ratio;
+    const left = (container.width - renderedWidth) / 2;
+    const top = (container.height - renderedHeight) / 2;
+
+    setImageRect({
+      left,
+      top,
+      width: renderedWidth,
+      height: renderedHeight
+    });
+  };
+
+  useEffect(() => {
+    window.addEventListener('resize', updateImageRect);
+    return () => {
+      window.removeEventListener('resize', updateImageRect);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (imageRef.current && imageRef.current.complete) {
+      updateImageRect();
+    }
+  }, [imageSrc]);
 
   // Touch/Mouse Handlers
   const handleStart = (e: React.TouchEvent | React.MouseEvent, type: string) => {
@@ -36,7 +70,7 @@ export const CropView: React.FC<CropViewProps> = ({ imageSrc, onConfirm, onCance
     const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
 
-    const rect = containerRef.current.getBoundingClientRect();
+    const rect = imageRect || containerRef.current.getBoundingClientRect();
     const deltaX = ((clientX - lastPos.current.x) / rect.width) * 100;
     const deltaY = ((clientY - lastPos.current.y) / rect.height) * 100;
 
@@ -140,81 +174,98 @@ export const CropView: React.FC<CropViewProps> = ({ imageSrc, onConfirm, onCance
         onMouseMove={handleMove}
         onTouchMove={handleMove}
       >
-        <img 
-          ref={imageRef}
-          src={imageSrc} 
-          alt="Crop Source" 
-          className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none opacity-50"
-        />
-
-        {/* The Crop Box (Highlighted Area) */}
-        {/* We use a separate image element clipped to the crop area to simulate the "highlight" effect 
-            while the background is dimmed. */}
-        <div 
-            style={{
-                left: `${crop.x}%`,
-                top: `${crop.y}%`,
-                width: `${crop.width}%`,
-                height: `${crop.height}%`
-            }}
-            className="absolute z-10 group cursor-move"
-            onMouseDown={(e) => handleStart(e, 'move')}
-            onTouchStart={(e) => handleStart(e, 'move')}
+        <div
+          style={imageRect ? {
+            position: 'absolute',
+            left: `${imageRect.left}px`,
+            top: `${imageRect.top}px`,
+            width: `${imageRect.width}px`,
+            height: `${imageRect.height}px`
+          } : {
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            width: '100%',
+            height: '100%'
+          }}
         >
-             {/* The crisp image inside the selection */}
-             <div className="absolute inset-0 overflow-hidden bg-black">
-                 <img 
-                    src={imageSrc} 
-                    className="absolute max-w-none"
-                    style={{
-                        left: `-${(crop.x / crop.width) * 100}%`,
-                        top: `-${(crop.y / crop.height) * 100}%`,
-                        width: `${(100 / crop.width) * 100}%`,
-                        height: `${(100 / crop.height) * 100}%`
-                    }}
-                 />
-             </div>
-             
-             {/* Border & Grid */}
-             <div className="absolute inset-0 border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
-                 {/* Rule of Thirds Grid */}
-                 <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-30">
-                     <div className="border-r border-white/50"></div>
-                     <div className="border-r border-white/50"></div>
-                     <div className="border-b border-white/50 col-span-3 row-start-1"></div>
-                     <div className="border-b border-white/50 col-span-3 row-start-2"></div>
-                 </div>
-             </div>
+          <img 
+            ref={imageRef}
+            src={imageSrc} 
+            alt="Crop Source" 
+            onLoad={updateImageRect}
+            className="w-full h-full object-cover pointer-events-none select-none opacity-50"
+          />
 
-             {/* Handles */}
-             <div 
-                className="absolute -top-3 -left-3 w-8 h-8 flex items-center justify-center z-20 touch-manipulation"
-                onMouseDown={(e) => { e.stopPropagation(); handleStart(e, 'tl'); }}
-                onTouchStart={(e) => { e.stopPropagation(); handleStart(e, 'tl'); }}
-             >
-                 <div className="w-4 h-4 border-t-4 border-l-4 border-indigo-400 rounded-tl-sm bg-transparent shadow-sm"></div>
-             </div>
-             <div 
-                className="absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center z-20 touch-manipulation"
-                onMouseDown={(e) => { e.stopPropagation(); handleStart(e, 'tr'); }}
-                onTouchStart={(e) => { e.stopPropagation(); handleStart(e, 'tr'); }}
-             >
-                 <div className="w-4 h-4 border-t-4 border-r-4 border-indigo-400 rounded-tr-sm bg-transparent shadow-sm"></div>
-             </div>
-             <div 
-                className="absolute -bottom-3 -left-3 w-8 h-8 flex items-center justify-center z-20 touch-manipulation"
-                onMouseDown={(e) => { e.stopPropagation(); handleStart(e, 'bl'); }}
-                onTouchStart={(e) => { e.stopPropagation(); handleStart(e, 'bl'); }}
-             >
-                 <div className="w-4 h-4 border-b-4 border-l-4 border-indigo-400 rounded-bl-sm bg-transparent shadow-sm"></div>
-             </div>
-             <div 
-                className="absolute -bottom-3 -right-3 w-8 h-8 flex items-center justify-center z-20 touch-manipulation"
-                onMouseDown={(e) => { e.stopPropagation(); handleStart(e, 'br'); }}
-                onTouchStart={(e) => { e.stopPropagation(); handleStart(e, 'br'); }}
-             >
-                 <div className="w-4 h-4 border-b-4 border-r-4 border-indigo-400 rounded-br-sm bg-transparent shadow-sm"></div>
-             </div>
+          {/* The Crop Box (Highlighted Area) */}
+          {/* We use a separate image element clipped to the crop area to simulate the "highlight" effect 
+              while the background is dimmed. */}
+          <div 
+              style={{
+                  left: `${crop.x}%`,
+                  top: `${crop.y}%`,
+                  width: `${crop.width}%`,
+                  height: `${crop.height}%`
+              }}
+              className="absolute z-10 group cursor-move"
+              onMouseDown={(e) => handleStart(e, 'move')}
+              onTouchStart={(e) => handleStart(e, 'move')}
+          >
+               {/* The crisp image inside the selection */}
+               <div className="absolute inset-0 overflow-hidden bg-black">
+                   <img 
+                      src={imageSrc} 
+                      className="absolute max-w-none"
+                      style={{
+                          left: `-${(crop.x / crop.width) * 100}%`,
+                          top: `-${(crop.y / crop.height) * 100}%`,
+                          width: `${(100 / crop.width) * 100}%`,
+                          height: `${(100 / crop.height) * 100}%`
+                      }}
+                   />
+               </div>
+               
+               {/* Border & Grid */}
+               <div className="absolute inset-0 border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
+                   {/* Rule of Thirds Grid */}
+                   <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-30">
+                       <div className="border-r border-white/50"></div>
+                       <div className="border-r border-white/50"></div>
+                       <div className="border-b border-white/50 col-span-3 row-start-1"></div>
+                       <div className="border-b border-white/50 col-span-3 row-start-2"></div>
+                   </div>
+               </div>
+
+               {/* Handles */}
+               <div 
+                  className="absolute -top-3 -left-3 w-8 h-8 flex items-center justify-center z-20 touch-manipulation"
+                  onMouseDown={(e) => { e.stopPropagation(); handleStart(e, 'tl'); }}
+                  onTouchStart={(e) => { e.stopPropagation(); handleStart(e, 'tl'); }}
+               >
+                   <div className="w-4 h-4 border-t-4 border-l-4 border-indigo-400 rounded-tl-sm bg-transparent shadow-sm"></div>
+               </div>
+               <div 
+                  className="absolute -top-3 -right-3 w-8 h-8 flex items-center justify-center z-20 touch-manipulation"
+                  onMouseDown={(e) => { e.stopPropagation(); handleStart(e, 'tr'); }}
+                  onTouchStart={(e) => { e.stopPropagation(); handleStart(e, 'tr'); }}
+               >
+                   <div className="w-4 h-4 border-t-4 border-r-4 border-indigo-400 rounded-tr-sm bg-transparent shadow-sm"></div>
+               </div>
+               <div 
+                  className="absolute -bottom-3 -left-3 w-8 h-8 flex items-center justify-center z-20 touch-manipulation"
+                  onMouseDown={(e) => { e.stopPropagation(); handleStart(e, 'bl'); }}
+                  onTouchStart={(e) => { e.stopPropagation(); handleStart(e, 'bl'); }}
+               >
+                   <div className="w-4 h-4 border-b-4 border-l-4 border-indigo-400 rounded-bl-sm bg-transparent shadow-sm"></div>
+               </div>
+               <div 
+                  className="absolute -bottom-3 -right-3 w-8 h-8 flex items-center justify-center z-20 touch-manipulation"
+                  onMouseDown={(e) => { e.stopPropagation(); handleStart(e, 'br'); }}
+                  onTouchStart={(e) => { e.stopPropagation(); handleStart(e, 'br'); }}
+               >
+                   <div className="w-4 h-4 border-b-4 border-r-4 border-indigo-400 rounded-br-sm bg-transparent shadow-sm"></div>
+               </div>
+          </div>
         </div>
       </div>
 

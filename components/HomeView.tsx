@@ -4,6 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { AppTheme, AppLanguage } from '../types';
 import { IconHistory, IconSettings, IconCamera } from './Icons';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { useHistoryStore } from '../store/useHistoryStore';
+import { getAccentStyles } from '../utils/accent';
+import { triggerHaptic } from '../utils';
 
 interface HomeViewProps {
   onScanStart: () => void;
@@ -136,8 +139,17 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onOpenSettings
 }) => {
   const { t } = useTranslation();
-  const { theme, language } = useSettingsStore();
+  const { theme, language, accentColor, reduceMotion } = useSettingsStore();
+  const { history } = useHistoryStore();
   const isDark = theme === 'dark';
+  
+  const accent = getAccentStyles(accentColor, isDark);
+  const totalDiscoveries = history.length;
+  
+  // Calculate today's discoveries under local system calendar date
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayDiscoveries = history.filter(item => item.timestamp >= todayStart.getTime()).length;
   
   const [greeting, setGreeting] = useState('');
   
@@ -150,6 +162,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [insight, setInsight] = useState(INSIGHTS_DB[0].items[0]);
   const [currentImage, setCurrentImage] = useState<string>("");
   const [photoCredit, setPhotoCredit] = useState<{name: string, link: string} | null>(null);
+  const [photoDownloadUrl, setPhotoDownloadUrl] = useState<string | null>(null);
+  const [photoDownloadLocation, setPhotoDownloadLocation] = useState<string | null>(null);
 
   // Helper: Get Time Context
   const getTimeContext = (): { timeQuery: string } => {
@@ -169,10 +183,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
           // 2. 检查本地缓存
           const cachedData = localStorage.getItem(CACHE_KEY);
           if (cachedData) {
-              const { url, credit, timestamp } = JSON.parse(cachedData);
+              const parsed = JSON.parse(cachedData);
+              const { url, credit, timestamp, downloadUrl, downloadLocation } = parsed;
               if (Date.now() - timestamp < CACHE_EXPIRY) {
                   setCurrentImage(url);
                   setPhotoCredit(credit);
+                  setPhotoDownloadUrl(downloadUrl || url);
+                  setPhotoDownloadLocation(downloadLocation || null);
                   return true;
               }
           }
@@ -196,6 +213,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
               const photo = data.results[randomIndex];
 
               const url = photo.urls.regular;
+              const downloadUrl = photo.urls.full || photo.urls.raw || url;
+              const downloadLocation = photo.links?.download_location || null;
               const credit = {
                   name: photo.user.name,
                   link: photo.user.links.html
@@ -203,28 +222,58 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
               setCurrentImage(url);
               setPhotoCredit(credit);
+              setPhotoDownloadUrl(downloadUrl);
+              setPhotoDownloadLocation(downloadLocation);
               
               // 5. 将这轮抽中的图片和信息存入缓存，锁死 2 小时
               localStorage.setItem(CACHE_KEY, JSON.stringify({
                   url,
                   credit,
+                  downloadUrl,
+                  downloadLocation,
                   timestamp: Date.now()
               }));
 
-              // 触发下载统计 (完全符合你发的 API Guidelines 规范)
-              if (photo.links?.download_location) {
-                  fetch('/api/unsplash/download', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ url: photo.links.download_location })
-                  }).catch(() => {});
-              }
               return true;
           }
       } catch (error) {
           console.warn("Unsplash API failed", error);
       }
       return false;
+  };
+
+  // Explicit user wallpaper save triggering (Unsplash compliant download tracking trigger)
+  const handleDownloadBackground = async () => {
+      const targetUrl = photoDownloadUrl || currentImage;
+      if (!targetUrl) return;
+      
+      try {
+          // Trigger download statistic tracking only on explicit save!
+          if (photoDownloadLocation) {
+              fetch('/api/unsplash/download', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ url: photoDownloadLocation })
+              }).catch(() => {});
+          }
+
+          const response = await fetch(targetUrl);
+          const blob = await response.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = `LoreLens-Wallpaper-${Date.now()}.jpg`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+          
+          triggerHaptic();
+      } catch (e) {
+          console.error("Failed to download wallpaper", e);
+          window.open(targetUrl, '_blank');
+      }
   };
 
   // Logic to load content
@@ -303,8 +352,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 // 1. 核心修复：同时请求两种语言的地理位置
                 // localizedData 用于右上角完美显示，englishData 用于 Unsplash 精确搜索！
                 const [localizedData, englishData] = await Promise.all([
-                    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=12&addressdetails=1&accept-language=${language}`).then(res => res.json()),
-                    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=12&addressdetails=1&accept-language=en`).then(res => res.json())
+                    fetch(`/api/nominatim/reverse?lat=${latitude}&lon=${longitude}&lang=${language}`).then(res => res.json()),
+                    fetch(`/api/nominatim/reverse?lat=${latitude}&lon=${longitude}&lang=en`).then(res => res.json())
                 ]);
                 
                 // 解析用于【显示】的本地化名称
@@ -404,6 +453,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const textMain = isDark ? 'text-white' : 'text-gray-900';
   const textSub = isDark ? 'text-gray-400' : 'text-gray-600';
 
+  // Motion reduction animation helper classes
+  const animFadeInUp = reduceMotion ? '' : 'animate-fade-in-up';
+  const animFadeInUpDelay100 = reduceMotion ? '' : 'animate-fade-in-up delay-100';
+  const animFadeInUpDelay200 = reduceMotion ? '' : 'animate-fade-in-up delay-200';
+  const cardScaleHover = reduceMotion ? '' : 'transform transition-all duration-500 hover:scale-[1.02]';
+  const pulseClass = reduceMotion ? '' : 'animate-pulse';
+
   return (
     <div className="absolute inset-0 z-20 overflow-hidden">
         {/* Dynamic Blurred Background Layer */}
@@ -423,7 +479,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
       <div className="absolute inset-0 z-10 overflow-y-auto no-scrollbar">
         <div className="min-h-full flex flex-col justify-between">
             {/* Top Header */}
-            <div className="pt-12 px-6 animate-fade-in-up shrink-0">
+            <div className={`pt-12 px-6 ${animFadeInUp} shrink-0`}>
             <h1 className={`text-3xl font-light tracking-tight ${textMain}`}>
                 {greeting}
             </h1>
@@ -434,11 +490,24 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </svg>
                 <span className={`text-sm font-medium truncate max-w-[200px] ${textMain}`}>{locationName}</span>
             </div>
+            
+            {/* Travel Journal Stats Bar */}
+            <div className="mt-4 flex items-center gap-3">
+              <div className={`px-3 py-1.5 rounded-full border text-xs font-mono flex items-center gap-2 backdrop-blur-md transition-all duration-300 ${isDark ? 'bg-white/5 border-white/10 text-white/90' : 'bg-black/5 border-black/10 text-black/95 shadow-sm'}`}>
+                <span className={`w-2 h-2 rounded-full ${pulseClass} ${accent.bg}`} />
+                <span className="font-light">{language === 'zh' ? '今日发现' : 'Today'}</span>
+                <span className="font-bold">{todayDiscoveries}</span>
+              </div>
+              <div className={`px-3 py-1.5 rounded-full border text-xs font-mono flex items-center gap-2 backdrop-blur-md transition-all duration-300 ${isDark ? 'bg-white/5 border-white/10 text-white/90' : 'bg-black/5 border-black/10 text-black/95 shadow-sm'}`}>
+                <span className="font-light">{language === 'zh' ? '累计日志' : 'Total Logs'}</span>
+                <span className="font-bold">{totalDiscoveries}</span>
+              </div>
+            </div>
             </div>
 
             {/* Center: Daily Insight Card */}
             <div className="flex-1 flex items-center justify-center p-4 w-full max-w-md mx-auto my-2 shrink-0">
-            <div className={`w-full rounded-[2rem] border shadow-2xl overflow-hidden transform transition-all duration-500 hover:scale-[1.02] animate-fade-in-up delay-100 ${cardBg} backdrop-blur-md relative`}>
+            <div className={`w-full rounded-[2rem] border shadow-2xl overflow-hidden ${cardScaleHover} ${animFadeInUpDelay100} ${cardBg} backdrop-blur-md relative`}>
                 {/* Card Image */}
                 <div className="h-52 bg-gray-900 relative overflow-hidden group">
                     {currentImage && (
@@ -452,10 +521,20 @@ export const HomeView: React.FC<HomeViewProps> = ({
                         <span className="text-xs font-bold text-white tracking-wider uppercase">{t('home.localInsight')}</span>
                     </div>
                     
-                    {/* Unsplash Attribution */}
+                    {/* Unsplash Attribution with Save Wallpaper capability */}
                     {photoCredit && (
-                        <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black/80 to-transparent flex justify-end z-10">
-                            <span className="text-[10px] text-white/70 font-light tracking-wide">
+                        <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-black/85 to-transparent flex justify-between items-center z-10">
+                            <button
+                                onClick={handleDownloadBackground}
+                                className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-white hover:text-white transition-all flex items-center gap-1.5 active:scale-95"
+                                title="Download Wallpaper"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v12m0 0l-4-4m4 4l4-4" />
+                                </svg>
+                                <span className="text-[9px] font-semibold uppercase tracking-wider">Save</span>
+                            </button>
+                            <span className="text-[10px] text-white/70 font-light tracking-wide truncate max-w-[200px]">
                                 {t('home.photoBy')} <a href={`${photoCredit.link}?utm_source=${APP_NAME}&utm_medium=referral`} target="_blank" rel="noopener noreferrer" className="underline hover:text-white transition-colors">{photoCredit.name}</a> {t('home.on')} <a href={`https://unsplash.com/?utm_source=${APP_NAME}&utm_medium=referral`} target="_blank" rel="noopener noreferrer" className="underline hover:text-white transition-colors">Unsplash</a>
                             </span>
                         </div>
@@ -465,7 +544,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 {/* Card Content */}
                 <div className="p-5">
                     <div className="flex gap-4 mb-3">
-                        <div className={`w-1 h-12 rounded-full ${isDark ? 'bg-indigo-500' : 'bg-indigo-600'}`}></div>
+                        <div className={`w-1 h-12 rounded-full ${accent.bg}`}></div>
                         <p className={`text-lg font-serif italic leading-relaxed ${textMain}`}>
                             "{insight.quote}"
                         </p>
@@ -478,7 +557,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
 
             {/* Bottom Controls */}
-            <div className="pb-8 pt-4 px-8 flex items-center justify-between animate-fade-in-up delay-200 shrink-0">
+            <div className={`pb-8 pt-4 px-8 flex items-center justify-between ${animFadeInUpDelay200} shrink-0`}>
             <button 
                 onClick={onOpenHistory}
                 className={`p-4 rounded-full transition-all active:scale-90 border backdrop-blur-md shadow-lg ${isDark ? 'bg-black/20 border-white/10 text-white hover:bg-black/40' : 'bg-white/40 border-white/40 text-gray-900 hover:bg-white/60'}`}

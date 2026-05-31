@@ -93,17 +93,73 @@ async function startServer() {
   });
   
   app.post("/api/unsplash/download", async (req, res) => {
-      const url = req.body.url as string;
-      if (!url) { res.status(400).json({ error: "Missing url" }); return; }
+      const urlStr = req.body.url as string;
+      if (!urlStr) { res.status(400).json({ error: "Missing url" }); return; }
       if (!UNSPLASH_ACCESS_KEY) { res.status(500).json({ error: "Server config error" }); return; }
       
       try {
-          await fetch(url, { headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` } });
+          const parsedUrl = new URL(urlStr);
+          if (parsedUrl.host !== "api.unsplash.com" || parsedUrl.protocol !== "https:") {
+              res.status(400).json({ error: "Unauthorized download endpoint" });
+              return;
+          }
+          await fetch(urlStr, { headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` } });
           res.json({ success: true });
       } catch (e) {
           console.error(e);
           res.status(500).json({ error: "Download record failed" });
       }
+  });
+
+  // --- NOMINATIM GEOLOCATION REVERSE PROXY ---
+  const geoCache = new Map<string, any>();
+
+  app.get("/api/nominatim/reverse", async (req, res) => {
+    const lat = req.query.lat as string;
+    const lon = req.query.lon as string;
+    const lang = (req.query.lang as string) || "en";
+
+    if (!lat || !lon) {
+       res.status(400).json({ error: "Missing lat or lon parameters" });
+       return;
+    }
+
+    const roundedLat = parseFloat(lat).toFixed(4);
+    const roundedLon = parseFloat(lon).toFixed(4);
+    const cacheKey = `${roundedLat},${roundedLon},${lang}`;
+
+    if (geoCache.has(cacheKey)) {
+      res.json(geoCache.get(cacheKey));
+      return;
+    }
+
+    try {
+      const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=12&addressdetails=1&accept-language=${lang}`;
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "LoreLens/1.1.0 (contact: support@lorelens.org; AIStudio-Build-Proxy)",
+          "Referer": "https://lorelens.org"
+        }
+      });
+
+      if (!response.ok) {
+         res.status(response.status).json({ error: "Nominatim API error" });
+         return;
+      }
+
+      const data = await response.json();
+      geoCache.set(cacheKey, data);
+
+      if (geoCache.size > 1000) {
+        const firstKey = geoCache.keys().next().value;
+        if (firstKey) geoCache.delete(firstKey);
+      }
+
+      res.json(data);
+    } catch (e) {
+      console.error("Nominatim geocoding proxy failed:", e);
+      res.status(500).json({ error: "Failed to reverse geocode" });
+    }
   });
 
   // --- GEMINI API ROUTE: DECIPHER ---
@@ -125,7 +181,6 @@ async function startServer() {
 
         console.log(`Attempting generateContent. useMaps=${useMaps}, model=gemini-3.5-flash`);
 
-        // @ts-ignore
         return await ai.models.generateContent({
           model: "gemini-3.5-flash", 
           contents: {
@@ -152,9 +207,8 @@ async function startServer() {
             ],
           },
           config: {
-            // @ts-ignore
-            tools: tools,
-            toolConfig: toolConfig,
+            tools: tools as any,
+            toolConfig: toolConfig as any,
             safetySettings: [
                 { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
                 { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
@@ -204,8 +258,7 @@ async function startServer() {
         model: "gemini-3.1-flash-tts-preview",
         contents: [{ parts: [{ text }] }],
         config: {
-          // @ts-ignore
-          responseModalities: [Modality.AUDIO],
+          responseModalities: [Modality.AUDIO] as any,
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: { voiceName: 'Kore' },

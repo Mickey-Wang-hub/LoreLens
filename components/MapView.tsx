@@ -50,13 +50,23 @@ export const MapView: React.FC<MapViewProps> = ({ onClose }) => {
         subdomains: 'abcd',
     }).addTo(map);
 
-    // Custom Icon
+    // Custom Icon with escaped/sanitized thumbnail parameter
+    const escapeHtml = (unsafe: string) => {
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    };
+
     const createIcon = (thumbnail?: string) => {
         if (thumbnail) {
+             const escapedThumb = escapeHtml(thumbnail);
              return L.divIcon({
                 className: 'custom-pin',
                 html: `<div style="width: 48px; height: 48px; border-radius: 50%; border: 3px solid white; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.5); background: #333;">
-                         <img src="${thumbnail}" style="width: 100%; height: 100%; object-fit: cover;" />
+                         <img src="${escapedThumb}" style="width: 100%; height: 100%; object-fit: cover;" />
                        </div>
                        <div style="position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; border-top: 10px solid white;"></div>`,
                 iconSize: [48, 56],
@@ -79,18 +89,23 @@ export const MapView: React.FC<MapViewProps> = ({ onClose }) => {
         spiderfyOnMaxZoom: true
     });
 
-    // Add Markers
+    // Add Markers safely
     locations.forEach(item => {
         if (item.location) {
             const marker = L.marker([item.location.lat, item.location.lng], {
                 icon: createIcon(item.thumbnail)
             });
 
+            const titleEscaped = escapeHtml(item.title);
+            const essenceEscaped = escapeHtml(item.essence);
+            const mapUriEscaped = item.mapUri ? escapeHtml(item.mapUri) : '';
+            const isSafeUri = !mapUriEscaped || mapUriEscaped.startsWith('http://') || mapUriEscaped.startsWith('https://');
+
             const popupContent = `
-                <div class="text-sm font-sans w-48">
-                    <h3 class="font-bold text-base mb-1 truncate">${item.title}</h3>
-                    <p class="text-gray-500 line-clamp-2 text-xs leading-relaxed mb-2">${item.essence}</p>
-                    ${item.mapUri ? `<a href="${item.mapUri}" target="_blank" class="text-blue-500 hover:text-blue-600 font-medium no-underline inline-block">${t('map.openMaps')}</a>` : ''}
+                <div class="text-sm font-sans w-48 ${isDark ? 'text-white' : 'text-gray-900'}">
+                    <h3 class="font-bold text-base mb-1 truncate">${titleEscaped}</h3>
+                    <p class="text-gray-500 line-clamp-2 text-xs leading-relaxed mb-2">${essenceEscaped}</p>
+                    ${isSafeUri && mapUriEscaped ? `<a href="${mapUriEscaped}" target="_blank" class="text-blue-500 hover:text-blue-600 font-medium no-underline inline-block">${t('map.openMaps')}</a>` : ''}
                 </div>
             `;
             marker.bindPopup(popupContent);
